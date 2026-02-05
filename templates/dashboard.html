@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SQLite Editor{% endblock %}
+{% block content %}
+<nav>
+    <h1>SQLite Editor</h1>
+    <span>Logged in as {{ user }} | <a href="/logout">Logout</a></span>
+</nav>
+
+<h2>Tables</h2>
+<div id="table-list"
+     hx-get="/api/tables"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+    Loading tables...
+</div>
+
+<h3>Create New Table</h3>
+<form hx-post="/api/tables"
+      hx-target="#table-list"
+      hx-swap="innerHTML"
+      hx-on::after-request="this.reset()">
+    <input type="text" name="table_name" placeholder="Table name" required>
+    <input type="text" name="col_name_1" placeholder="Column name" required>
+    <select name="col_type_1">
+        <option value="TEXT">TEXT</option>
+        <option value="INTEGER">INTEGER</option>
+        <option value="REAL">REAL</option>
+        <option value="BLOB">BLOB</option>
+    </select>
+    <button type="submit">Create Table</button>
+</form>
+{% endblock %}

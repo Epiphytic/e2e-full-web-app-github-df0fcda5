@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Login - SQLite Editor{% endblock %}
+{% block content %}
+<h1>SQLite Editor</h1>
+<form method="POST" action="/login">
+    <label for="token">JWT Token:</label><br>
+    <textarea id="token" name="token" rows="4" cols="60" placeholder="Paste your JWT token here"></textarea><br>
+    <button type="submit">Login</button>
+</form>
+{% match error %}
+    {% when Some with (err) %}
+<div class="error">{{ err }}</div>
+    {% when None %}
+{% endmatch %}
+{% endblock %}

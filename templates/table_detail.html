@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ table_name }} - SQLite Editor{% endblock %}
+{% block content %}
+<nav>
+    <h1><a href="/">SQLite Editor</a> / {{ table_name }}</h1>
+    <span>Logged in as {{ user }} | <a href="/logout">Logout</a></span>
+</nav>
+
+<h2>Columns</h2>
+<div id="column-list"
+     hx-get="/api/tables/{{ table_name }}/columns"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+    Loading columns...
+</div>
+
+<h3>Add Column</h3>
+<form hx-post="/api/tables/{{ table_name }}/columns"
+      hx-target="#column-list"
+      hx-swap="innerHTML"
+      hx-on::after-request="this.reset()">
+    <input type="text" name="column_name" placeholder="Column name" required>
+    <select name="column_type">
+        <option value="TEXT">TEXT</option>
+        <option value="INTEGER">INTEGER</option>
+        <option value="REAL">REAL</option>
+        <option value="BLOB">BLOB</option>
+    </select>
+    <button type="submit">Add Column</button>
+</form>
+
+<h2>Data</h2>
+<div id="table-data">
+{% if rows.is_empty() %}
+<p>No data in this table.</p>
+{% else %}
+<table>
+    <thead>
+        <tr>
+        {% for col in columns %}
+            <th>{{ col.name }} ({{ col.col_type }})</th>
+        {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+        {% for cell in row %}
+            <td>{{ cell }}</td>
+        {% endfor %}
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+</div>
+{% endblock %}

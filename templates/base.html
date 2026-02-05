@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SQLite Editor{% endblock %}</title>
+    <script src="/static/htmx.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 1rem; }
+        table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+        th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+        th { background: #f5f5f5; }
+        button, input[type="submit"] { padding: 0.5rem 1rem; cursor: pointer; }
+        .error { color: red; padding: 0.5rem; background: #fee; border: 1px solid #fcc; margin: 0.5rem 0; }
+        form { margin: 1rem 0; }
+        input, select { padding: 0.4rem; margin: 0.2rem; }
+        .danger { background: #dc3545; color: white; border: none; }
+        nav { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    {% block content %}{% endblock %}
+</body>
+</html>
