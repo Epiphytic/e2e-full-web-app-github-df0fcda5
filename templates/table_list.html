@@ -1,0 +1,18 @@
+{% if tables.is_empty() %}
+<p>No tables yet. Create one above.</p>
+{% else %}
+<ul>
+{% for table in tables %}
+    <li>
+        <a href="/tables/{{ table }}">{{ table }}</a>
+        <button class="danger"
+                hx-delete="/api/tables/{{ table }}"
+                hx-target="#table-list"
+                hx-swap="innerHTML"
+                hx-confirm="Drop table '{{ table }}'? This cannot be undone.">
+            Drop
+        </button>
+    </li>
+{% endfor %}
+</ul>
+{% endif %}
