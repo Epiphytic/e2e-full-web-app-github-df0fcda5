@@ -19,5 +19,6 @@ export function generateToken(sub: string, expiresInSeconds: number = 60): strin
 }
 
 export function generateExpiredToken(sub: string): string {
-  return generateToken(sub, -60);
+  // Use -300 (5 minutes ago) to exceed jsonwebtoken's default 60s leeway
+  return generateToken(sub, -300);
 }

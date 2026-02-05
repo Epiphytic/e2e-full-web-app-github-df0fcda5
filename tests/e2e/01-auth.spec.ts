@@ -21,10 +21,13 @@ test.describe('Authentication', () => {
     const token = generateExpiredToken('testuser');
     await page.goto('/login');
     await page.locator('textarea[name="token"]').fill(token);
-    await page.locator('button[type="submit"]').click();
-    // Wait for page to finish loading after form submit
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('.error')).toBeVisible();
+    // The form POST returns HTML directly (not a redirect) on error,
+    // so we need to wait for the response to load
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.locator('button[type="submit"]').click(),
+    ]);
+    await expect(page.locator('.error')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.error')).toContainText('Invalid token');
   });
 

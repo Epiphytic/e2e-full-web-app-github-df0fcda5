@@ -14,9 +14,9 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'cd .. && cargo run',
+    command: 'cd .. && rm -f data.db && cargo run',
     url: 'http://localhost:3000/health',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

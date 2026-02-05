@@ -38,23 +38,23 @@ async fn main() {
     // Protected routes
     let protected_routes = Router::new()
         .route("/", get(handlers::dashboard))
-        .route("/tables/{table_name}", get(handlers::table_detail_handler))
+        .route("/tables/:table_name", get(handlers::table_detail_handler))
         .route("/api/tables", get(handlers::list_tables_handler))
         .route("/api/tables", post(handlers::create_table_handler))
         .route(
-            "/api/tables/{table_name}",
+            "/api/tables/:table_name",
             delete(handlers::delete_table_handler),
         )
         .route(
-            "/api/tables/{table_name}/columns",
+            "/api/tables/:table_name/columns",
             get(handlers::list_columns_handler),
         )
         .route(
-            "/api/tables/{table_name}/columns",
+            "/api/tables/:table_name/columns",
             post(handlers::add_column_handler),
         )
         .route(
-            "/api/tables/{table_name}/columns/{column_name}",
+            "/api/tables/:table_name/columns/:column_name",
             delete(handlers::delete_column_handler),
         )
         .route("/logout", get(handlers::logout))
