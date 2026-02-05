@@ -555,6 +555,8 @@ Expected: FAIL — functions not defined.
 
 **Step 3: Implement models.rs**
 
+This module defines all request/response types including `LoginForm` (used by `login_submit` handler in CRUISE-005) and `CreateTableForm` (used by `create_table` handler in CRUISE-006). Handlers import these via `use crate::models::*;`.
+
 ```rust
 use serde::{Deserialize, Serialize};
 
@@ -1000,7 +1002,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use askama::Template;
-use crate::{auth::Claims, models::*};
+use crate::{auth::Claims, models::*}; // Imports LoginForm, CreateTableForm, ColumnDef, etc. from models.rs (CRUISE-003)
 use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
@@ -1226,6 +1228,7 @@ Expected: FAIL
 
 ```rust
 // Add these template structs to handlers.rs
+// Note: CreateTableForm and other model structs are already imported via `use crate::models::*;` from CRUISE-005.
 
 #[derive(Template)]
 #[template(path = "table_list.html")]
