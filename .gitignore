@@ -1,0 +1,85 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Keys and credentials
+certs/*.pem
+certs/*.key
+certs/*.pub
+certs/*.crt
+*.p12
+*.pfx
+*.jks
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Node.js (Playwright tests)
+node_modules/
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+tests/blob-report/
+
+# Editor/IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+.vim/
+*.code-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Log files
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+/tmp/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Fork-join directories
+.fork-join/
+
+# Test output
+test-results/
+playwright-report/
