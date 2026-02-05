@@ -574,9 +574,16 @@ pub struct TableInfo {
 }
 
 /// Form struct for HTML form-based table creation.
-/// Fields match the HTML form inputs in dashboard.html (name="col_name_1", name="col_type_1").
-/// The handler converts these flat fields into a Vec<ColumnDef> for the db::create_table call.
-/// Only supports single-column creation; additional columns are added via the add_column flow.
+///
+/// Data flow: HTML form (dashboard.html) → CreateTableForm → handler converts to Vec<ColumnDef> → db::create_table
+///
+/// The HTML form sends flat fields (name="table_name", name="col_name_1", name="col_type_1")
+/// which Axum's Form extractor deserializes into this struct. The create_table handler in
+/// handlers.rs then converts the flat col_name_1/col_type_1 fields into a Vec<ColumnDef>
+/// before passing to db::create_table(&conn, &form.table_name, &columns).
+///
+/// Note: db::create_table accepts &[ColumnDef] (supports multiple columns), but the HTML form
+/// only creates one initial column. Additional columns are added via the add_column handler.
 #[derive(Debug, Deserialize)]
 pub struct CreateTableForm {
     pub table_name: String,
@@ -1268,14 +1275,17 @@ pub async fn list_tables(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+// CreateTableForm (defined in models.rs) is deserialized from the HTML form in dashboard.html.
+// The form sends flat fields: table_name, col_name_1, col_type_1.
+// This handler bridges the form representation to the db layer's Vec<ColumnDef> interface.
 pub async fn create_table(
     State(state): State<AppState>,
     Form(form): Form<CreateTableForm>,
 ) -> impl IntoResponse {
     let result = tokio::task::spawn_blocking(move || {
         let conn = state.db.lock().unwrap();
-        // Convert flat HTML form fields (col_name_1, col_type_1) into Vec<ColumnDef> for db layer.
-        // The form creates a table with one initial column; more columns are added via add_column.
+        // Convert CreateTableForm's flat fields into Vec<ColumnDef> for db::create_table.
+        // HTML form only supports one initial column; additional columns use the add_column endpoint.
         let columns = vec![ColumnDef { name: form.col_name_1, col_type: form.col_type_1 }];
         if let Err(e) = db::create_table(&conn, &form.table_name, &columns) {
             return Err(e);
@@ -2118,7 +2128,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-005b",
       "subject": "DB Editor Route Handlers",
-      "description": "Build on the verified base server from CRUISE-005 to add DB editor functionality. Add DB editor template structs (TableListTemplate, TableDetailTemplate, ColumnListTemplate) and implement htmx route handlers for table and column CRUD operations: list_tables, create_table, delete_table, table_detail, list_columns, add_column, delete_column. Wire up all DB editor routes in the protected route group in main.rs. All handlers return HTML fragments for htmx swaps.",
+      "description": "Build on the verified base server from CRUISE-005 to add DB editor functionality. Add DB editor template structs (TableListTemplate, TableDetailTemplate, ColumnListTemplate) and implement htmx route handlers for table and column CRUD operations: list_tables, create_table, delete_table, table_detail, list_columns, add_column, delete_column. Wire up all DB editor routes in the protected route group in main.rs. All handlers return HTML fragments for htmx swaps. The create_table handler uses CreateTableForm (flat fields: table_name, col_name_1, col_type_1 matching the HTML form) and converts to Vec<ColumnDef> before calling db::create_table.",
       "blocked_by": ["CRUISE-005", "CRUISE-003"],
       "complexity": "medium",
       "acceptance_criteria": [
