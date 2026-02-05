@@ -142,9 +142,7 @@ pub async fn create_table_handler(
             name: form.col_name_1,
             col_type: form.col_type_1,
         }];
-        if let Err(e) = db::create_table(&conn, &form.table_name, &columns) {
-            return Err(e);
-        }
+        db::create_table(&conn, &form.table_name, &columns)?;
         db::list_tables(&conn)
     })
     .await
@@ -169,9 +167,7 @@ pub async fn delete_table_handler(
     let state = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let conn = state.db.lock().unwrap();
-        if let Err(e) = db::drop_table(&conn, &table_name) {
-            return Err(e);
-        }
+        db::drop_table(&conn, &table_name)?;
         db::list_tables(&conn)
     })
     .await
@@ -254,9 +250,7 @@ pub async fn add_column_handler(
             name: form.column_name,
             col_type: form.column_type,
         };
-        if let Err(e) = db::add_column(&conn, &table_name, &col) {
-            return Err(e);
-        }
+        db::add_column(&conn, &table_name, &col)?;
         db::list_columns(&conn, &table_name).map(|columns| (table_name, columns))
     })
     .await
@@ -283,9 +277,7 @@ pub async fn delete_column_handler(
     let state = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         let conn = state.db.lock().unwrap();
-        if let Err(e) = db::drop_column(&conn, &table_name, &column_name) {
-            return Err(e);
-        }
+        db::drop_column(&conn, &table_name, &column_name)?;
         db::list_columns(&conn, &table_name).map(|columns| (table_name, columns))
     })
     .await

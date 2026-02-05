@@ -1,14 +1,5 @@
 use crate::models::ColumnDef;
 use rusqlite::{Connection, Result};
-use std::sync::{Arc, Mutex};
-
-pub type DbPool = Arc<Mutex<Connection>>;
-
-pub fn init_db(path: &str) -> Result<DbPool> {
-    let conn = Connection::open(path)?;
-    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-    Ok(Arc::new(Mutex::new(conn)))
-}
 
 fn validate_identifier(name: &str) -> Result<()> {
     if name.is_empty() {
