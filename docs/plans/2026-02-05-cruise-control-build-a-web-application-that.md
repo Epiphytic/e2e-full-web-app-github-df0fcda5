@@ -617,6 +617,11 @@ use crate::models::ColumnDef;
 use rusqlite::{Connection, Result, params};
 use std::sync::{Arc, Mutex};
 
+// NOTE: We use std::sync::Mutex (not tokio::sync::Mutex) because rusqlite::Connection
+// is not Send across await points. All async handlers MUST wrap Mutex access inside
+// tokio::task::spawn_blocking() to offload blocking DB work to Tokio's blocking thread
+// pool and prevent executor thread starvation. For production workloads with high
+// concurrency, consider replacing this with an async-friendly pool like deadpool-sqlite.
 pub type DbPool = Arc<Mutex<Connection>>;
 
 pub fn init_db(path: &str) -> Result<DbPool> {
@@ -1023,6 +1028,9 @@ use rusqlite::Connection;
 pub type AppState = Arc<AppStateInner>;
 
 pub struct AppStateInner {
+    // std::sync::Mutex is used here intentionally: rusqlite::Connection is !Send,
+    // so tokio::sync::Mutex cannot be used. All handler access MUST be wrapped in
+    // tokio::task::spawn_blocking to avoid blocking the async executor.
     pub db: Mutex<Connection>,
     pub public_key_pem: Vec<u8>,
     pub private_key_pem: Option<Vec<u8>>, // Only for dev/test
