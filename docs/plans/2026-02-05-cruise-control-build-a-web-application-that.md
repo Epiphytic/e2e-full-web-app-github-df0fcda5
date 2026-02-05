@@ -559,10 +559,15 @@ pub struct TableInfo {
     pub row_count: usize,
 }
 
+/// Form struct for HTML form-based table creation.
+/// Fields match the HTML form inputs in dashboard.html (name="col_name_1", name="col_type_1").
+/// The handler converts these flat fields into a Vec<ColumnDef> for the db::create_table call.
+/// Only supports single-column creation; additional columns are added via the add_column flow.
 #[derive(Debug, Deserialize)]
-pub struct CreateTableRequest {
+pub struct CreateTableForm {
     pub table_name: String,
-    pub columns: Vec<ColumnDef>,
+    pub col_name_1: String,
+    pub col_type_1: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -574,13 +579,6 @@ pub struct AddColumnRequest {
 #[derive(Debug, Deserialize)]
 pub struct LoginForm {
     pub token: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateTableForm {
-    pub table_name: String,
-    pub col_name_1: String,
-    pub col_type_1: String,
 }
 ```
 
@@ -1213,6 +1211,8 @@ pub async fn create_table(
     Form(form): Form<CreateTableForm>,
 ) -> impl IntoResponse {
     let conn = state.db.lock().unwrap();
+    // Convert flat HTML form fields (col_name_1, col_type_1) into Vec<ColumnDef> for db layer.
+    // The form creates a table with one initial column; more columns are added via add_column.
     let columns = vec![ColumnDef { name: form.col_name_1, col_type: form.col_type_1 }];
     if let Err(e) = db::create_table(&conn, &form.table_name, &columns) {
         return Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response();
