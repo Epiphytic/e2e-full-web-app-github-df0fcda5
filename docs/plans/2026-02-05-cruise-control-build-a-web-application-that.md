@@ -203,6 +203,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 askama = "0.12"
 askama_axum = "0.4"
 jsonwebtoken = "9"
+rsa = { version = "0.9", features = ["pkcs8"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -337,7 +338,10 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use rsa::pkcs8::DecodePublicKey;
+use rsa::RsaPublicKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -370,17 +374,23 @@ pub fn validate_token(token: &str, public_key_pem: &[u8]) -> Result<Claims, json
 }
 
 pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoResponse {
-    // Parse public key and extract modulus/exponent for JWKS
-    let rsa_key = jsonwebtoken::DecodingKey::from_rsa_pem(&public_key_pem).unwrap();
-    // Serve the public key in JWKS format
-    // Implementation: parse PEM, extract n and e, base64url encode
+    // Parse the PEM-encoded RSA public key using the `rsa` crate to extract modulus (n) and exponent (e).
+    // `jsonwebtoken` does not expose these components, so we use `rsa::RsaPublicKey` with PKCS#8 PEM decoding.
+    let pem_str = std::str::from_utf8(&public_key_pem).unwrap();
+    let public_key = RsaPublicKey::from_public_key_pem(pem_str).unwrap();
+
+    // Extract modulus and exponent as big-endian byte arrays, then base64url-encode them (no padding)
+    let n = URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be());
+    let e = URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be());
+
     Json(serde_json::json!({
         "keys": [{
             "kty": "RSA",
             "alg": "RS256",
             "use": "sig",
             "kid": "sqlite-editor-key-1",
-            // n and e extracted from public key
+            "n": n,
+            "e": e,
         }]
     }))
 }
