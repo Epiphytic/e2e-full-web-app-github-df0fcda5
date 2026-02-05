@@ -570,6 +570,18 @@ pub struct AddColumnRequest {
     pub column_name: String,
     pub column_type: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct LoginForm {
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTableForm {
+    pub table_name: String,
+    pub col_name_1: String,
+    pub col_type_1: String,
+}
 ```
 
 **Step 4: Implement db.rs**
