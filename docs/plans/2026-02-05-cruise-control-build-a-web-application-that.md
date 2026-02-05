@@ -607,6 +607,10 @@ pub fn init_db(path: &str) -> Result<DbPool> {
     Ok(Arc::new(Mutex::new(conn)))
 }
 
+// IMPORTANT: All async handlers must use tokio::task::spawn_blocking when
+// accessing the DbPool to avoid blocking the Tokio executor thread.
+// See handler implementations in handlers.rs for the pattern.
+
 fn validate_identifier(name: &str) -> Result<(), String> {
     // Only allow alphanumeric and underscore, must start with letter or underscore
     if name.is_empty() {
@@ -1207,10 +1211,16 @@ struct ColumnListTemplate {
 }
 
 // --- DB Editor API handlers (return HTML fragments for htmx) ---
+// All handlers use tokio::task::spawn_blocking to offload synchronous
+// Mutex<Connection> access to Tokio's blocking thread pool, preventing
+// the async executor threads from being starved during DB operations.
 
 pub async fn list_tables(State(state): State<AppState>) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    match db::list_tables(&conn) {
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        db::list_tables(&conn)
+    }).await.unwrap();
+    match result {
         Ok(tables) => Html(TableListTemplate { tables }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
@@ -1220,14 +1230,17 @@ pub async fn create_table(
     State(state): State<AppState>,
     Form(form): Form<CreateTableForm>,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    // Convert flat HTML form fields (col_name_1, col_type_1) into Vec<ColumnDef> for db layer.
-    // The form creates a table with one initial column; more columns are added via add_column.
-    let columns = vec![ColumnDef { name: form.col_name_1, col_type: form.col_type_1 }];
-    if let Err(e) = db::create_table(&conn, &form.table_name, &columns) {
-        return Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response();
-    }
-    match db::list_tables(&conn) {
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        // Convert flat HTML form fields (col_name_1, col_type_1) into Vec<ColumnDef> for db layer.
+        // The form creates a table with one initial column; more columns are added via add_column.
+        let columns = vec![ColumnDef { name: form.col_name_1, col_type: form.col_type_1 }];
+        if let Err(e) = db::create_table(&conn, &form.table_name, &columns) {
+            return Err(e);
+        }
+        db::list_tables(&conn)
+    }).await.unwrap();
+    match result {
         Ok(tables) => Html(TableListTemplate { tables }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
@@ -1237,11 +1250,14 @@ pub async fn delete_table(
     State(state): State<AppState>,
     Path(table_name): Path<String>,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    if let Err(e) = db::drop_table(&conn, &table_name) {
-        return Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response();
-    }
-    match db::list_tables(&conn) {
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        if let Err(e) = db::drop_table(&conn, &table_name) {
+            return Err(e);
+        }
+        db::list_tables(&conn)
+    }).await.unwrap();
+    match result {
         Ok(tables) => Html(TableListTemplate { tables }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
@@ -1252,12 +1268,16 @@ pub async fn table_detail(
     Path(table_name): Path<String>,
     claims: Claims,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    let columns = db::list_columns(&conn, &table_name).unwrap_or_default();
-    let rows = db::get_table_rows(&conn, &table_name, 100, 0).unwrap_or_default();
+    let user = claims.sub.clone();
+    let (table_name, columns, rows) = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        let columns = db::list_columns(&conn, &table_name).unwrap_or_default();
+        let rows = db::get_table_rows(&conn, &table_name, 100, 0).unwrap_or_default();
+        (table_name, columns, rows)
+    }).await.unwrap();
     Html(TableDetailTemplate {
         table_name,
-        user: claims.sub,
+        user,
         columns,
         rows,
     }.render().unwrap())
@@ -1267,9 +1287,12 @@ pub async fn list_columns(
     State(state): State<AppState>,
     Path(table_name): Path<String>,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    match db::list_columns(&conn, &table_name) {
-        Ok(columns) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        db::list_columns(&conn, &table_name).map(|columns| (table_name, columns))
+    }).await.unwrap();
+    match result {
+        Ok((table_name, columns)) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
 }
@@ -1279,13 +1302,16 @@ pub async fn add_column(
     Path(table_name): Path<String>,
     Form(form): Form<AddColumnRequest>,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    let col = ColumnDef { name: form.column_name, col_type: form.column_type };
-    if let Err(e) = db::add_column(&conn, &table_name, &col) {
-        return Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response();
-    }
-    match db::list_columns(&conn, &table_name) {
-        Ok(columns) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        let col = ColumnDef { name: form.column_name, col_type: form.column_type };
+        if let Err(e) = db::add_column(&conn, &table_name, &col) {
+            return Err(e);
+        }
+        db::list_columns(&conn, &table_name).map(|columns| (table_name, columns))
+    }).await.unwrap();
+    match result {
+        Ok((table_name, columns)) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
 }
@@ -1294,12 +1320,15 @@ pub async fn delete_column(
     State(state): State<AppState>,
     Path((table_name, column_name)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let conn = state.db.lock().unwrap();
-    if let Err(e) = db::drop_column(&conn, &table_name, &column_name) {
-        return Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response();
-    }
-    match db::list_columns(&conn, &table_name) {
-        Ok(columns) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = state.db.lock().unwrap();
+        if let Err(e) = db::drop_column(&conn, &table_name, &column_name) {
+            return Err(e);
+        }
+        db::list_columns(&conn, &table_name).map(|columns| (table_name, columns))
+    }).await.unwrap();
+    match result {
+        Ok((table_name, columns)) => Html(ColumnListTemplate { table_name, columns }.render().unwrap()).into_response(),
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
 }
@@ -1983,7 +2012,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-003",
       "subject": "SQLite Database Operations",
-      "description": "Implement SQLite operations: list_tables, create_table, drop_table, list_columns, add_column, drop_column, get_table_rows. Use rusqlite with in-memory connection for tests. Implement SQL injection prevention via identifier validation (only alphanumeric and underscore allowed). Use Arc<Mutex<Connection>> for thread-safe access from async Axum handlers.",
+      "description": "Implement SQLite operations: list_tables, create_table, drop_table, list_columns, add_column, drop_column, get_table_rows. Use rusqlite with in-memory connection for tests. Implement SQL injection prevention via identifier validation (only alphanumeric and underscore allowed). Use Arc<Mutex<Connection>> for thread-safe access; all async handlers must use tokio::task::spawn_blocking to avoid blocking the Tokio executor during DB operations.",
       "blocked_by": ["CRUISE-001"],
       "complexity": "medium",
       "acceptance_criteria": [
@@ -2022,7 +2051,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-005",
       "subject": "Base Server Setup and Auth Routes",
-      "description": "Set up the core server infrastructure and authentication routes only (no DB editor logic). Create AppState struct with Mutex<Connection> and public key. Implement auth-related handlers: login_page, login_submit (JWT validation + cookie), dashboard, logout, health. Configure main.rs with server startup, public routes (login, health, JWKS), protected route group with auth middleware, and static file serving via tower-http ServeDir. DB editor routes are added separately in CRUISE-005b.",
+      "description": "Set up the core server infrastructure and authentication routes only (no DB editor logic). Create AppState struct with Mutex<Connection> and public key. Implement auth-related handlers: login_page, login_submit (JWT validation + cookie), dashboard, logout, health. All handlers that access the database must use tokio::task::spawn_blocking to offload synchronous Mutex lock + DB work to Tokio's blocking thread pool. Configure main.rs with server startup, public routes (login, health, JWKS), protected route group with auth middleware, and static file serving via tower-http ServeDir. DB editor routes are added separately in CRUISE-005b.",
       "blocked_by": ["CRUISE-002", "CRUISE-004"],
       "complexity": "medium",
       "acceptance_criteria": [
@@ -2174,7 +2203,7 @@ CRUISE-001 (Scaffolding + .gitignore)
   ],
   "risks": [
     "SQLite DROP COLUMN requires SQLite 3.35.0+ — rusqlite bundled version must be checked; if too old, need table rebuild fallback",
-    "Concurrent SQLite access through Mutex<Connection> may become a bottleneck — acceptable for this use case but would need connection pooling for production",
+    "Concurrent SQLite access through Mutex<Connection> may become a bottleneck — mitigated by using tokio::task::spawn_blocking in all async handlers to avoid blocking the Tokio executor; for production scale, consider an async-friendly pool like deadpool-sqlite",
     "JWT private key must never be committed to git — generate-keys.sh creates keys in certs/ which is gitignored, but CI must generate fresh keys",
     "Playwright webServer config with cargo run has slow startup due to Rust compilation — CI should use pre-built binary (cargo build --release then run binary directly)",
     "htmx partial rendering requires careful template boundaries — full pages vs fragments must be clearly separated in Askama templates",
