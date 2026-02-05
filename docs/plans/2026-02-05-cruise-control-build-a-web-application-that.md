@@ -332,8 +332,8 @@ Expected: FAIL — `validate_token` not defined.
 
 ```rust
 use axum::{
-    extract::State,
-    http::{Request, StatusCode},
+    extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
@@ -385,10 +385,10 @@ pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoRe
     }))
 }
 
-pub async fn auth_middleware<B>(
+pub async fn auth_middleware(
     State(public_key_pem): State<Vec<u8>>,
-    mut req: Request<B>,
-    next: Next<B>,
+    mut req: Request,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     // Check for token in cookie or Authorization header
     let token = req.headers()
