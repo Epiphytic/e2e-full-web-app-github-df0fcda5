@@ -395,6 +395,8 @@ pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoRe
     }))
 }
 
+// Note: In Axum 0.7+, `Request` and `Next` no longer take a generic body type `B`.
+// Use `axum::extract::Request` and `axum::middleware::Next` directly (not `Request<B>` / `Next<B>`).
 pub async fn auth_middleware(
     State(public_key_pem): State<Vec<u8>>,
     mut req: Request,
