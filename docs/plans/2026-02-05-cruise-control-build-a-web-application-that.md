@@ -1150,7 +1150,42 @@ Expected: Compiles.
 Run: `cargo test`
 Expected: All tests pass.
 
-**Step 7: Commit**
+**Step 7: Verify running server (infrastructure gate)**
+
+Start the server and verify the core infrastructure responds before proceeding to DB editor routes:
+
+```bash
+# Generate test keys if not already present
+./certs/generate-keys.sh
+
+# Start server in background
+cargo run &
+SERVER_PID=$!
+sleep 2
+
+# Verify health endpoint
+curl -s http://127.0.0.1:3000/health | grep -q "OK" && echo "PASS: health" || echo "FAIL: health"
+
+# Verify login page renders
+curl -s http://127.0.0.1:3000/login | grep -q "token" && echo "PASS: login page" || echo "FAIL: login page"
+
+# Verify JWKS endpoint
+curl -s http://127.0.0.1:3000/.well-known/jwks.json | grep -q "keys" && echo "PASS: JWKS" || echo "FAIL: JWKS"
+
+# Verify auth middleware rejects unauthenticated access
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/)
+[ "$STATUS" = "401" ] || [ "$STATUS" = "303" ] && echo "PASS: auth guard" || echo "FAIL: auth guard (got $STATUS)"
+
+# Verify static file serving
+curl -s http://127.0.0.1:3000/static/htmx.min.js | grep -q "htmx" && echo "PASS: static files" || echo "FAIL: static files"
+
+# Cleanup
+kill $SERVER_PID 2>/dev/null
+```
+
+Expected: All checks pass. This gate ensures the core server infrastructure (auth, routing, static files) is verified before DB editor routes are layered on top.
+
+**Step 8: Commit**
 
 ```bash
 git add src/handlers.rs src/main.rs
@@ -1160,6 +1195,8 @@ git commit -m "feat: add base server setup with auth routes and health endpoint"
 ---
 
 ### Task CRUISE-005b: DB Editor Route Handlers
+
+> **Prerequisite gate:** CRUISE-005 must be complete with a verified running server (health, login, JWKS, auth middleware, static files all responding). This task layers DB editor functionality on top of that verified infrastructure.
 
 **Files:**
 - Modify: `src/handlers.rs` (add DB editor template structs and route handlers)
@@ -1934,15 +1971,16 @@ CRUISE-001 (Scaffolding + .gitignore)
     },
     {
       "id": "SPAWN-004",
-      "name": "Base Server Setup and Auth Routes",
+      "name": "Base Server Setup and Auth Routes (with running server verification gate)",
       "use_spawn_team": true,
       "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
       "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-      "task_ids": ["CRUISE-005"]
+      "task_ids": ["CRUISE-005"],
+      "verification_gate": "Server must start and respond on health, login, JWKS, and auth endpoints before SPAWN-004b proceeds"
     },
     {
       "id": "SPAWN-004b",
-      "name": "DB Editor Route Handlers",
+      "name": "DB Editor Route Handlers (depends on verified SPAWN-004 infrastructure)",
       "use_spawn_team": true,
       "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
       "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
@@ -2064,6 +2102,7 @@ CRUISE-001 (Scaffolding + .gitignore)
         "Static files served at /static/",
         "Auth middleware rejects unauthenticated requests to protected routes",
         "Server starts and responds on configured port",
+        "Running server verification gate passes (health, login, JWKS, auth guard, static files all verified via curl)",
         "cargo check passes with no errors",
         "No DB editor handlers or templates included in this task"
       ],
