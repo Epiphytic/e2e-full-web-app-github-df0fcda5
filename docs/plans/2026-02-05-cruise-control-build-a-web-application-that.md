@@ -331,6 +331,13 @@ Expected: FAIL — `validate_token` not defined.
 
 **Step 4: Implement auth.rs**
 
+> **JWKS key extraction note:** Extracting the RSA modulus (`n`) and exponent (`e`) from a PEM
+> for the JWKS endpoint is non-trivial — `jsonwebtoken` does not expose these components.
+> We use the `rsa` crate (v0.9 with `pkcs8` feature, already in Cargo.toml) to parse the PEM
+> via `RsaPublicKey::from_public_key_pem()`, then extract `n`/`e` with `.n().to_bytes_be()`
+> and `.e().to_bytes_be()`. These are base64url-encoded using the `base64` crate (v0.22,
+> also in Cargo.toml). See the `jwks_endpoint` function below for the full extraction logic.
+
 ```rust
 use axum::{
     extract::{Request, State},
@@ -340,8 +347,8 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use rsa::pkcs8::DecodePublicKey;
-use rsa::RsaPublicKey;
+use rsa::pkcs8::DecodePublicKey;  // For PEM → RsaPublicKey parsing
+use rsa::RsaPublicKey;            // For extracting modulus (n) and exponent (e)
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
