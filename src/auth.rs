@@ -17,6 +17,22 @@ pub struct Claims {
     pub exp: usize,
 }
 
+#[axum::async_trait]
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Claims {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Claims>()
+            .cloned()
+            .ok_or(StatusCode::UNAUTHORIZED)
+    }
+}
+
 pub fn validate_token(
     token: &str,
     public_key_pem: &[u8],
@@ -28,8 +44,10 @@ pub fn validate_token(
     Ok(token_data.claims)
 }
 
-pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoResponse {
-    let pem_str = std::str::from_utf8(&public_key_pem).unwrap();
+pub async fn jwks_endpoint(
+    State(state): State<crate::handlers::AppState>,
+) -> impl IntoResponse {
+    let pem_str = std::str::from_utf8(&state.public_key_pem).unwrap();
     let public_key = RsaPublicKey::from_public_key_pem(pem_str).unwrap();
 
     let n = URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be());
@@ -48,7 +66,7 @@ pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoRe
 }
 
 pub async fn auth_middleware(
-    State(public_key_pem): State<Vec<u8>>,
+    State(state): State<crate::handlers::AppState>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -66,7 +84,7 @@ pub async fn auth_middleware(
     });
 
     match token {
-        Some(token) => match validate_token(token, &public_key_pem) {
+        Some(token) => match validate_token(token, &state.public_key_pem) {
             Ok(claims) => {
                 req.extensions_mut().insert(claims);
                 Ok(next.run(req).await)
