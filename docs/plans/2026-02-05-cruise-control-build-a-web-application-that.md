@@ -934,13 +934,13 @@ git commit -m "feat: add Askama templates and vendored htmx"
 
 ---
 
-### Task CRUISE-005: Route Handlers and Server Integration
+### Task CRUISE-005: Base Server Setup and Auth Routes
 
 **Files:**
-- Create: `src/handlers.rs`
-- Modify: `src/main.rs` (full router setup)
+- Create: `src/handlers.rs` (AppState, auth-related handlers, health endpoint)
+- Modify: `src/main.rs` (server config, public routes, auth middleware, static files)
 
-**Step 1: Write failing test for handler**
+**Step 1: Write failing test for health endpoint**
 
 ```rust
 // In src/handlers.rs
@@ -965,16 +965,16 @@ mod tests {
 Run: `cargo test --lib handlers`
 Expected: FAIL
 
-**Step 3: Implement handlers.rs**
+**Step 3: Implement AppState and auth/core handlers in handlers.rs**
 
 ```rust
 use axum::{
-    extract::{Path, State, Form},
+    extract::{State, Form},
     http::StatusCode,
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Response},
 };
 use askama::Template;
-use crate::{auth::Claims, db, models::*};
+use crate::{auth::Claims, models::*};
 use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
@@ -986,7 +986,7 @@ pub struct AppStateInner {
     pub private_key_pem: Option<Vec<u8>>, // Only for dev/test
 }
 
-// Template structs
+// Template structs (auth-related)
 #[derive(Template)]
 #[template(path = "login.html")]
 struct LoginTemplate {
@@ -1000,34 +1000,12 @@ struct DashboardTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "table_list.html")]
-struct TableListTemplate {
-    tables: Vec<String>,
-}
-
-#[derive(Template)]
-#[template(path = "table_detail.html")]
-struct TableDetailTemplate {
-    table_name: String,
-    user: String,
-    columns: Vec<ColumnDef>,
-    rows: Vec<Vec<String>>,
-}
-
-#[derive(Template)]
-#[template(path = "column_list.html")]
-struct ColumnListTemplate {
-    table_name: String,
-    columns: Vec<ColumnDef>,
-}
-
-#[derive(Template)]
 #[template(path = "error.html")]
 struct ErrorTemplate {
     message: String,
 }
 
-// --- Page handlers ---
+// --- Auth and core page handlers ---
 
 pub async fn login_page() -> impl IntoResponse {
     Html(LoginTemplate { error: None }.render().unwrap())
@@ -1059,7 +1037,156 @@ pub async fn dashboard(claims: Claims) -> impl IntoResponse {
     Html(DashboardTemplate { user: claims.sub }.render().unwrap())
 }
 
-// --- API handlers (return HTML fragments for htmx) ---
+pub async fn logout() -> impl IntoResponse {
+    (
+        StatusCode::SEE_OTHER,
+        [
+            ("Location", "/login"),
+            ("Set-Cookie", "token=; HttpOnly; Path=/; Max-Age=0"),
+        ],
+    )
+}
+
+pub async fn health() -> impl IntoResponse {
+    "OK"
+}
+```
+
+**Step 4: Implement main.rs with server config and auth routes**
+
+```rust
+mod auth;
+mod db;
+mod handlers;
+mod models;
+
+use axum::{
+    routing::{get, post},
+    middleware,
+    Router,
+};
+use handlers::AppState;
+use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
+use tower_http::services::ServeDir;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let public_key = std::fs::read("certs/public.pem")
+        .expect("Missing certs/public.pem — run certs/generate-keys.sh");
+
+    let conn = rusqlite::Connection::open("data.db")
+        .expect("Failed to open SQLite database");
+    conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+
+    let state = Arc::new(handlers::AppStateInner {
+        db: Mutex::new(conn),
+        public_key_pem: public_key,
+        private_key_pem: None,
+    });
+
+    // Public routes
+    let public_routes = Router::new()
+        .route("/login", get(handlers::login_page))
+        .route("/login", post(handlers::login_submit))
+        .route("/health", get(handlers::health))
+        .route("/.well-known/jwks.json", get(auth::jwks_endpoint));
+
+    // Protected routes (auth-only for now; DB editor routes added in CRUISE-005b)
+    let protected_routes = Router::new()
+        .route("/", get(handlers::dashboard))
+        .route("/logout", get(handlers::logout))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
+
+    let app = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .nest_service("/static", ServeDir::new("static"))
+        .with_state(state);
+
+    let port: u16 = std::env::var("PORT").ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    tracing::info!("listening on {}", addr);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+**Step 5: Verify it compiles**
+
+Run: `cargo check`
+Expected: Compiles.
+
+**Step 6: Run all unit tests**
+
+Run: `cargo test`
+Expected: All tests pass.
+
+**Step 7: Commit**
+
+```bash
+git add src/handlers.rs src/main.rs
+git commit -m "feat: add base server setup with auth routes and health endpoint"
+```
+
+---
+
+### Task CRUISE-005b: DB Editor Route Handlers
+
+**Files:**
+- Modify: `src/handlers.rs` (add DB editor template structs and route handlers)
+- Modify: `src/main.rs` (wire up table and column CRUD routes in protected group)
+
+**Step 1: Write failing test for table list endpoint**
+
+```rust
+// Add to src/handlers.rs tests module
+#[tokio::test]
+async fn test_list_tables_requires_auth() {
+    let app = create_router();
+    let server = TestServer::new(app).unwrap();
+    let response = server.get("/api/tables").await;
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `cargo test --lib handlers`
+Expected: FAIL
+
+**Step 3: Add DB editor template structs and handlers to handlers.rs**
+
+```rust
+// Add these template structs to handlers.rs
+
+#[derive(Template)]
+#[template(path = "table_list.html")]
+struct TableListTemplate {
+    tables: Vec<String>,
+}
+
+#[derive(Template)]
+#[template(path = "table_detail.html")]
+struct TableDetailTemplate {
+    table_name: String,
+    user: String,
+    columns: Vec<ColumnDef>,
+    rows: Vec<Vec<String>>,
+}
+
+#[derive(Template)]
+#[template(path = "column_list.html")]
+struct ColumnListTemplate {
+    table_name: String,
+    columns: Vec<ColumnDef>,
+}
+
+// --- DB Editor API handlers (return HTML fragments for htmx) ---
 
 pub async fn list_tables(State(state): State<AppState>) -> impl IntoResponse {
     let conn = state.db.lock().unwrap();
@@ -1154,65 +1281,14 @@ pub async fn delete_column(
         Err(e) => Html(ErrorTemplate { message: e.to_string() }.render().unwrap()).into_response(),
     }
 }
-
-pub async fn logout() -> impl IntoResponse {
-    (
-        StatusCode::SEE_OTHER,
-        [
-            ("Location", "/login"),
-            ("Set-Cookie", "token=; HttpOnly; Path=/; Max-Age=0"),
-        ],
-    )
-}
-
-pub async fn health() -> impl IntoResponse {
-    "OK"
-}
 ```
 
-**Step 4: Update main.rs with full router**
+**Step 4: Wire up DB editor routes in main.rs**
+
+Add the following routes to the `protected_routes` group in `main.rs`:
 
 ```rust
-mod auth;
-mod db;
-mod handlers;
-mod models;
-
-use axum::{
-    routing::{get, post, delete},
-    middleware,
-    Router,
-};
-use handlers::AppState;
-use std::sync::{Arc, Mutex};
-use std::net::SocketAddr;
-use tower_http::services::ServeDir;
-
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
-
-    let public_key = std::fs::read("certs/public.pem")
-        .expect("Missing certs/public.pem — run certs/generate-keys.sh");
-
-    let conn = rusqlite::Connection::open("data.db")
-        .expect("Failed to open SQLite database");
-    conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
-
-    let state = Arc::new(handlers::AppStateInner {
-        db: Mutex::new(conn),
-        public_key_pem: public_key,
-        private_key_pem: None,
-    });
-
-    // Public routes
-    let public_routes = Router::new()
-        .route("/login", get(handlers::login_page))
-        .route("/login", post(handlers::login_submit))
-        .route("/health", get(handlers::health))
-        .route("/.well-known/jwks.json", get(auth::jwks_endpoint));
-
-    // Protected routes
+    // Protected routes (now including DB editor)
     let protected_routes = Router::new()
         .route("/", get(handlers::dashboard))
         .route("/tables/{table_name}", get(handlers::table_detail))
@@ -1224,21 +1300,6 @@ async fn main() {
         .route("/api/tables/{table_name}/columns/{column_name}", delete(handlers::delete_column))
         .route("/logout", get(handlers::logout))
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
-
-    let app = Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
-        .nest_service("/static", ServeDir::new("static"))
-        .with_state(state);
-
-    let port: u16 = std::env::var("PORT").ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tracing::info!("listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-}
 ```
 
 **Step 5: Verify it compiles**
@@ -1255,7 +1316,7 @@ Expected: All tests pass.
 
 ```bash
 git add src/handlers.rs src/main.rs
-git commit -m "feat: add route handlers and full server integration"
+git commit -m "feat: add DB editor route handlers for table and column CRUD"
 ```
 
 ---
@@ -1773,13 +1834,18 @@ git commit -m "chore: final polish and integration verification"
 ```
 CRUISE-001 (Scaffolding + .gitignore)
     ├── CRUISE-002 (JWT Auth)
-    │       └── CRUISE-005 (Handlers + Server) ──→ CRUISE-006 (Playwright Setup)
-    ├── CRUISE-003 (SQLite Operations)                    ├── CRUISE-007 (Auth E2E)
-    │       └── CRUISE-005 (Handlers + Server)            ├── CRUISE-008 (Table E2E)
-    └── CRUISE-004 (Templates + htmx)                     └── CRUISE-009 (Column E2E)
-            └── CRUISE-005 (Handlers + Server)
-                                                    CRUISE-010 (CI/CD) ← independent
-                                                    CRUISE-011 (Integration) ← depends on all
+    │       └── CRUISE-005 (Base Server + Auth) ──→ CRUISE-005b (DB Editor Routes)
+    ├── CRUISE-003 (SQLite Operations)                         │
+    │       └── CRUISE-005b (DB Editor Routes)                 │
+    └── CRUISE-004 (Templates + htmx)                          │
+            └── CRUISE-005 (Base Server + Auth)                │
+                                                               ▼
+                                            CRUISE-005b ──→ CRUISE-006 (Playwright Setup)
+                                                               ├── CRUISE-007 (Auth E2E)
+                                                               ├── CRUISE-008 (Table E2E)
+                                                               └── CRUISE-009 (Column E2E)
+                                            CRUISE-010 (CI/CD) ← independent
+                                            CRUISE-011 (Integration) ← depends on all
 ```
 
 ---
@@ -1817,11 +1883,19 @@ CRUISE-001 (Scaffolding + .gitignore)
     },
     {
       "id": "SPAWN-004",
-      "name": "Server Integration and Route Handlers",
+      "name": "Base Server Setup and Auth Routes",
       "use_spawn_team": true,
       "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
       "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
       "task_ids": ["CRUISE-005"]
+    },
+    {
+      "id": "SPAWN-004b",
+      "name": "DB Editor Route Handlers",
+      "use_spawn_team": true,
+      "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
+      "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+      "task_ids": ["CRUISE-005b"]
     },
     {
       "id": "SPAWN-005",
@@ -1925,23 +1999,19 @@ CRUISE-001 (Scaffolding + .gitignore)
     },
     {
       "id": "CRUISE-005",
-      "subject": "Route Handlers and Server Integration",
-      "description": "Implement Axum route handlers connecting auth, database, and templates. Create AppState with Mutex<Connection> and public key. Wire up all routes: public (login, health, jwks), protected (dashboard, table CRUD, column CRUD, logout). Serve static files via tower-http ServeDir. Form handlers for htmx (return HTML partials). Auth middleware on protected route group.",
-      "blocked_by": ["CRUISE-002", "CRUISE-003", "CRUISE-004"],
-      "complexity": "high",
+      "subject": "Base Server Setup and Auth Routes",
+      "description": "Create AppState struct with Mutex<Connection> and public key. Implement core handlers: login_page, login_submit (JWT validation + cookie), dashboard, logout, health. Set up main.rs with server config, public routes (login, health, JWKS), protected route group with auth middleware, and static file serving via tower-http ServeDir. This establishes the core infrastructure that DB editor routes build upon.",
+      "blocked_by": ["CRUISE-002", "CRUISE-004"],
+      "complexity": "medium",
       "acceptance_criteria": [
         "GET /login shows login form",
         "POST /login validates JWT and sets cookie",
         "GET / shows dashboard (requires auth)",
-        "GET /api/tables returns table list HTML partial",
-        "POST /api/tables creates table and returns updated list",
-        "DELETE /api/tables/:name drops table",
-        "GET /api/tables/:name/columns returns column list HTML partial",
-        "POST /api/tables/:name/columns adds column",
-        "DELETE /api/tables/:name/columns/:col removes column",
         "GET /health returns 200 OK",
         "GET /.well-known/jwks.json returns JWKS",
+        "GET /logout clears cookie and redirects to login",
         "Static files served at /static/",
+        "Auth middleware rejects unauthenticated requests to protected routes",
         "cargo check passes with no errors"
       ],
       "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
@@ -1949,10 +2019,31 @@ CRUISE-001 (Scaffolding + .gitignore)
       "spawn_instance": "SPAWN-004"
     },
     {
+      "id": "CRUISE-005b",
+      "subject": "DB Editor Route Handlers",
+      "description": "Add DB editor template structs (TableListTemplate, TableDetailTemplate, ColumnListTemplate) and implement htmx route handlers for table and column CRUD operations: list_tables, create_table, delete_table, table_detail, list_columns, add_column, delete_column. Wire up all DB editor routes in the protected route group in main.rs. All handlers return HTML fragments for htmx swaps.",
+      "blocked_by": ["CRUISE-005", "CRUISE-003"],
+      "complexity": "medium",
+      "acceptance_criteria": [
+        "GET /api/tables returns table list HTML partial",
+        "POST /api/tables creates table and returns updated list",
+        "DELETE /api/tables/:name drops table",
+        "GET /tables/:name shows table detail page",
+        "GET /api/tables/:name/columns returns column list HTML partial",
+        "POST /api/tables/:name/columns adds column",
+        "DELETE /api/tables/:name/columns/:col removes column",
+        "All handlers return HTML fragments (not full pages) for htmx",
+        "cargo check passes with no errors"
+      ],
+      "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+      "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
+      "spawn_instance": "SPAWN-004b"
+    },
+    {
       "id": "CRUISE-006",
       "subject": "Playwright E2E Test Setup",
       "description": "Initialize Playwright project in tests/ directory. Create playwright.config.ts with webServer config pointing to cargo run. Create test helper that generates JWT tokens using the local private key (crypto.sign with RSA-SHA256). Install Playwright and chromium browser.",
-      "blocked_by": ["CRUISE-005"],
+      "blocked_by": ["CRUISE-005b"],
       "complexity": "medium",
       "acceptance_criteria": [
         "tests/package.json has @playwright/test dependency",
@@ -2042,7 +2133,7 @@ CRUISE-001 (Scaffolding + .gitignore)
       "id": "CRUISE-011",
       "subject": "Integration Testing and Final Polish",
       "description": "Run full test suite: cargo clippy, cargo test, Playwright E2E tests. Validate GitHub Actions YAML. Fix any issues found. Ensure the application builds cleanly, all tests pass, and CI configuration is correct.",
-      "blocked_by": ["CRUISE-001", "CRUISE-002", "CRUISE-003", "CRUISE-004", "CRUISE-005", "CRUISE-006", "CRUISE-007", "CRUISE-008", "CRUISE-009", "CRUISE-010"],
+      "blocked_by": ["CRUISE-001", "CRUISE-002", "CRUISE-003", "CRUISE-004", "CRUISE-005", "CRUISE-005b", "CRUISE-006", "CRUISE-007", "CRUISE-008", "CRUISE-009", "CRUISE-010"],
       "complexity": "medium",
       "acceptance_criteria": [
         "cargo clippy passes with no warnings",
