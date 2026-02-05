@@ -195,10 +195,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "cors"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 askama = "0.12"
 askama_axum = "0.4"
@@ -2279,7 +2279,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     "Super-Linter may have false positives on vendored htmx.min.js — needs FILTER_REGEX_EXCLUDE pattern",
     "Form-based table/column creation uses simple single-column form — may need extension for multi-column table creation (currently creates one column at a time)",
     "rusqlite InvalidParameterName error variant may not exist — may need custom error type for validation errors",
-    "Axum middleware signature may differ between axum versions — code is written for axum 0.8, verify API compatibility",
+    "Axum middleware signature may differ between axum versions — code is written for axum 0.7, verify API compatibility",
     "Committing test results from CI may cause race conditions if multiple PRs push simultaneously — use unique branch or artifact-only approach as fallback"
   ]
 }
