@@ -1409,13 +1409,13 @@ Add the following routes to the `protected_routes` group in `main.rs`:
     // Protected routes (now including DB editor)
     let protected_routes = Router::new()
         .route("/", get(handlers::dashboard))
-        .route("/tables/{table_name}", get(handlers::table_detail))
+        .route("/tables/:table_name", get(handlers::table_detail))
         .route("/api/tables", get(handlers::list_tables))
         .route("/api/tables", post(handlers::create_table))
-        .route("/api/tables/{table_name}", delete(handlers::delete_table))
-        .route("/api/tables/{table_name}/columns", get(handlers::list_columns))
-        .route("/api/tables/{table_name}/columns", post(handlers::add_column))
-        .route("/api/tables/{table_name}/columns/{column_name}", delete(handlers::delete_column))
+        .route("/api/tables/:table_name", delete(handlers::delete_table))
+        .route("/api/tables/:table_name/columns", get(handlers::list_columns))
+        .route("/api/tables/:table_name/columns", post(handlers::add_column))
+        .route("/api/tables/:table_name/columns/:column_name", delete(handlers::delete_column))
         .route("/logout", get(handlers::logout))
         .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware));
 ```
