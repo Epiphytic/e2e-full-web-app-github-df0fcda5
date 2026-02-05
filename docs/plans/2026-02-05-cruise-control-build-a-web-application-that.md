@@ -381,8 +381,11 @@ pub fn validate_token(token: &str, public_key_pem: &[u8]) -> Result<Claims, json
 }
 
 pub async fn jwks_endpoint(State(public_key_pem): State<Vec<u8>>) -> impl IntoResponse {
-    // Parse the PEM-encoded RSA public key using the `rsa` crate to extract modulus (n) and exponent (e).
-    // `jsonwebtoken` does not expose these components, so we use `rsa::RsaPublicKey` with PKCS#8 PEM decoding.
+    // Extracting modulus (n) and exponent (e) from an RSA public key PEM is non-trivial.
+    // `jsonwebtoken` does not expose these components, so we use the `rsa` crate (v0.9 with
+    // `pkcs8` feature — see Cargo.toml) which provides `RsaPublicKey::from_public_key_pem()`
+    // for PKCS#8 PEM decoding, and `.n()` / `.e()` accessors for the key components.
+    // The extracted values are base64url-encoded (no padding) per the JWK spec (RFC 7517).
     let pem_str = std::str::from_utf8(&public_key_pem).unwrap();
     let public_key = RsaPublicKey::from_public_key_pem(pem_str).unwrap();
 
@@ -2061,7 +2064,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-002",
       "subject": "JWT Authentication Infrastructure",
-      "description": "Create RSA keypair generation script (certs/generate-keys.sh). Implement JWT token validation using jsonwebtoken crate with RS256. Create auth middleware for Axum that checks Authorization header and cookies. Implement .well-known/jwks.json endpoint serving the public key in JWKS format. Write unit tests for valid token, expired token, and invalid token scenarios.",
+      "description": "Create RSA keypair generation script (certs/generate-keys.sh). Implement JWT token validation using jsonwebtoken crate with RS256. Create auth middleware for Axum that checks Authorization header and cookies. Implement .well-known/jwks.json endpoint serving the public key in JWKS format — use the `rsa` crate (v0.9, `pkcs8` feature) to extract modulus (n) and exponent (e) from the PEM since `jsonwebtoken` does not expose these components. Write unit tests for valid token, expired token, and invalid token scenarios.",
       "blocked_by": ["CRUISE-001"],
       "complexity": "high",
       "acceptance_criteria": [
