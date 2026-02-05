@@ -2000,7 +2000,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-005",
       "subject": "Base Server Setup and Auth Routes",
-      "description": "Create AppState struct with Mutex<Connection> and public key. Implement core handlers: login_page, login_submit (JWT validation + cookie), dashboard, logout, health. Set up main.rs with server config, public routes (login, health, JWKS), protected route group with auth middleware, and static file serving via tower-http ServeDir. This establishes the core infrastructure that DB editor routes build upon.",
+      "description": "Set up the core server infrastructure and authentication routes only (no DB editor logic). Create AppState struct with Mutex<Connection> and public key. Implement auth-related handlers: login_page, login_submit (JWT validation + cookie), dashboard, logout, health. Configure main.rs with server startup, public routes (login, health, JWKS), protected route group with auth middleware, and static file serving via tower-http ServeDir. DB editor routes are added separately in CRUISE-005b.",
       "blocked_by": ["CRUISE-002", "CRUISE-004"],
       "complexity": "medium",
       "acceptance_criteria": [
@@ -2012,7 +2012,9 @@ CRUISE-001 (Scaffolding + .gitignore)
         "GET /logout clears cookie and redirects to login",
         "Static files served at /static/",
         "Auth middleware rejects unauthenticated requests to protected routes",
-        "cargo check passes with no errors"
+        "Server starts and responds on configured port",
+        "cargo check passes with no errors",
+        "No DB editor handlers or templates included in this task"
       ],
       "permissions": ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
       "cli_params": "claude --model sonnet --allowedTools Read,Write,Edit,Bash,Glob,Grep --timeout 600",
@@ -2021,7 +2023,7 @@ CRUISE-001 (Scaffolding + .gitignore)
     {
       "id": "CRUISE-005b",
       "subject": "DB Editor Route Handlers",
-      "description": "Add DB editor template structs (TableListTemplate, TableDetailTemplate, ColumnListTemplate) and implement htmx route handlers for table and column CRUD operations: list_tables, create_table, delete_table, table_detail, list_columns, add_column, delete_column. Wire up all DB editor routes in the protected route group in main.rs. All handlers return HTML fragments for htmx swaps.",
+      "description": "Build on the verified base server from CRUISE-005 to add DB editor functionality. Add DB editor template structs (TableListTemplate, TableDetailTemplate, ColumnListTemplate) and implement htmx route handlers for table and column CRUD operations: list_tables, create_table, delete_table, table_detail, list_columns, add_column, delete_column. Wire up all DB editor routes in the protected route group in main.rs. All handlers return HTML fragments for htmx swaps.",
       "blocked_by": ["CRUISE-005", "CRUISE-003"],
       "complexity": "medium",
       "acceptance_criteria": [
